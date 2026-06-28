@@ -1,10 +1,10 @@
-# ignore temp files
+node_modules/
+user_token.json
 fix*.js
 fix*.py
 *.txt
 test_*
-write_fix.js
-do_fix.js
+do_*.js
+write_*.js
 gen_*
-p*.*
-node_modules/
+p1.txt

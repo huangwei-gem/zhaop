@@ -78,63 +78,81 @@ async function refreshTasks() {
 }
 
 // ====== 自动建群 ======
-async function autoCreateGroup() {
-	try {
-	var r = await feishu.listRec(BASE_TOKEN, TASK_TABLE, { viewId: TASK_VIEW, pageSize: 500, automaticFields: true });
-	if (r.code !== 0 || !r.data || !r.data.items) return;
-	for (var task of r.data.items) {
-		if (processedTasks.has(task.record_id)) continue;
-		processedTasks.add(task.record_id);
-		var tf = (task && task.fields) || {};
-		var st = Array.isArray(tf["招聘状态"]) ? ((tf["招聘状态"][0] && tf["招聘状态"][0].name) ? tf["招聘状态"][0].name : String(tf["招聘状态"][0] || "")) : String(tf["招聘状态"] || "");
-		if (!st || !st.includes("招聘")) continue;
-		var biz1 = Array.isArray(tf["业务一面"]) ? tf["业务一面"] : [];
-		var hr2 = Array.isArray(tf["HR二面"]) ? tf["HR二面"] : [];
-		var fin = Array.isArray(tf["终面"]) ? tf["终面"] : [];
-		var names = [];
-		if (Array.isArray(biz1)) biz1.forEach(function(x) { if (x && x.name) names.push(x.name); });
-		if (Array.isArray(hr2)) hr2.forEach(function(x) { if (x && x.name) names.push(x.name); });
-		if (Array.isArray(fin)) fin.forEach(function(x) { if (x && x.name) names.push(x.name); });
-		if (names.length === 0) continue;
-		var groupName = names.join("、") + "招聘群";
-		var existing = await feishu.findGroup(groupName);
-		if (existing) { console.log("[建群] " + groupName + " 已存在,跳过"); continue; }
-		console.log("[建群] 创建群: " + groupName);
-		var userOpenIds = [];
-		if (Array.isArray(biz1)) biz1.forEach(function(x) { if (x && x.id) userOpenIds.push(x.id); });
-		if (Array.isArray(hr2)) hr2.forEach(function(x) { if (x && x.id) userOpenIds.push(x.id); });
-		if (Array.isArray(fin)) fin.forEach(function(x) { if (x && x.id) userOpenIds.push(x.id); });
-		console.log("[建群] 面试官IDs:", JSON.stringify(userOpenIds));
-		if (userOpenIds.length === 0) { console.log("[建群] 无面试官ID,跳过"); continue; }
-		var token = await feishu.getToken();
-		var https = require("https");
-		var body = JSON.stringify({
-			name: groupName,
-			description: "招聘群",
-			only_at: false,
-			membership_approval: false,
-			chat_type: "private",
-			owner_id: "ou_2b11f9d276ced64c5aa10e8cea8fcb65",
-			user_id_list: userOpenIds
-		});
-		console.log("[建群] 请求:", body);
-		var createRes = await new Promise(function(res, rej) {
-			var opts = { hostname: "open.feishu.cn", path: "/open-apis/im/v1/chats?set_bot_manager=true", method: "POST", headers: { Authorization: "Bearer " + token, "Content-Type": "application/json; charset=utf-8" } };
-			var req = https.request(opts, function(resp) { var d = ""; resp.on("data", function(c) { d += c; }); resp.on("end", function() { res(JSON.parse(d)); }); });
-			req.on("error", rej); req.write(body); req.end();
-		});
-		console.log("[建群] 响应:", JSON.stringify(createRes));
-		if (createRes.code === 0 && createRes.data && createRes.data.chat_id) {
-			console.log("[建群] 群创建成功: " + groupName + " chat_id:" + createRes.data.chat_id);
-			groupCache[groupName] = createRes.data.chat_id;
-		} else {
-			console.error("[建群] 失败:", createRes.msg || JSON.stringify(createRes));
-		}
+// 用user_access_token(黄维身份)建群拉人
+var userTokenCache = null;
+var userTokenExp = 0;
+
+async function getUserToken() {
+	var now = Date.now();
+	if (userTokenCache && now < userTokenExp) return userTokenCache;
+	var f2=require("fs");
+	var tf=__dirname+"/../../user_token.json";
+	var rt=null;
+	try{var td=JSON.parse(f2.readFileSync(tf,"utf8"));rt=td.refresh_token;}catch(e){}
+	if(!rt){console.log("[建群] 无refresh_token,请先授权");return null;}
+	var https=require("https");
+	var b=JSON.stringify({grant_type:"refresh_token",refresh_token:rt,app_id:APP_ID,app_secret:APP_SECRET});
+	var r=await new Promise(function(res,rej){
+		var o={hostname:"open.feishu.cn",path:"/open-apis/authen/v1/refresh_access_token",method:"POST",headers:{"Content-Type":"application/json; charset=utf-8"}};
+		var req=https.request(o,function(rp){var d="";rp.on("data",function(c){d+=c;});rp.on("end",function(){res(JSON.parse(d));});});
+		req.on("error",rej);req.write(b);req.end();
+	});
+	if(r.code===0&&r.data&&r.data.access_token){
+		userTokenCache=r.data.access_token;
+		userTokenExp=now+(r.data.expires_in-60)*1000;
+		f2.writeFileSync(tf,JSON.stringify({refresh_token:r.data.refresh_token}),"utf8");
+		console.log("[建群] token刷新成功");
+		return userTokenCache;
 	}
-	} catch (e) { console.error("[建群] 错误:", e.message); }
+	console.error("[建群] token刷新失败:"+r.msg);
+	return null;
 }
 
-// ====== 群搜索 ======
+async function autoCreateGroup() {
+	try{
+		var userToken=await getUserToken();
+		if(!userToken){console.log("[建群] 未授权,跳过建群");return;}
+		var r=await feishu.listRec(BASE_TOKEN,TASK_TABLE,{viewId:TASK_VIEW,pageSize:500,automaticFields:true});
+		if(r.code!==0||!r.data||!r.data.items)return;
+		for(var task of r.data.items){
+			if(processedTasks.has(task.record_id))continue;
+			processedTasks.add(task.record_id);
+			var tf=(task&&task.fields)||{};
+			var st=Array.isArray(tf["招聘状态"])?((tf["招聘状态"][0]&&tf["招聘状态"][0].name)?tf["招聘状态"][0].name:String(tf["招聘状态"][0]||"")):String(tf["招聘状态"]||"");
+			if(!st||!st.includes("招聘"))continue;
+			var biz1=Array.isArray(tf["业务一面"])?tf["业务一面"]:[];
+			var hr2=Array.isArray(tf["HR二面"])?tf["HR二面"]:[];
+			var fin=Array.isArray(tf["终面"])?tf["终面"]:[];
+			var names=[];var userOpenIds=[];
+			if(Array.isArray(biz1))biz1.forEach(function(x){if(x&&x.name)names.push(x.name);if(x&&x.id)userOpenIds.push(x.id);});
+			if(Array.isArray(hr2))hr2.forEach(function(x){if(x&&x.name)names.push(x.name);if(x&&x.id)userOpenIds.push(x.id);});
+			if(Array.isArray(fin))fin.forEach(function(x){if(x&&x.name)names.push(x.name);if(x&&x.id)userOpenIds.push(x.id);});
+			if(names.length===0)continue;
+			var groupName=names.join("、")+"招聘群";
+			var existing=await feishu.findGroup(groupName);
+			if(existing){console.log("[建群] "+groupName+" 已存在跳过");continue;}
+			console.log("[建群] 创建群: "+groupName);
+			if(userOpenIds.length===0){console.log("[建群] 无面试官ID");continue;}
+			var https=require("https");
+			var body=JSON.stringify({name:groupName,description:"招聘群",only_at:false,membership_approval:false,chat_type:"private",owner_id:"ou_2b11f9d276ced64c5aa10e8cea8fcb65",user_id_list:userOpenIds,bot_id_list:["cli_aab1ca3228f91cef"]});
+			console.log("[建群] 请求:",body);
+			var createRes=await new Promise(function(res,rej){
+				var opts={hostname:"open.feishu.cn",path:"/open-apis/im/v1/chats?set_bot_manager=true",method:"POST",headers:{Authorization:"Bearer "+userToken,"Content-Type":"application/json; charset=utf-8"}};
+				var req=https.request(opts,function(rp){var d="";rp.on("data",function(c){d+=c;});rp.on("end",function(){res(JSON.parse(d));});});
+				req.on("error",rej);req.write(body);req.end();
+			});
+			console.log("[建群] 响应:",JSON.stringify(createRes));
+			if(createRes.code===0&&createRes.data&&createRes.data.chat_id){
+				console.log("[建群] 成功: "+groupName+" chat_id:"+createRes.data.chat_id);
+				groupCache[groupName]=createRes.data.chat_id;
+			}else{
+				console.error("[建群] 失败:",createRes.msg);
+			}
+		}
+	}catch(e){console.error("[建群] 错误:",e.message);}
+}
+
+// ====== 群搜索 ======// ====== 群搜索 ======
 function getGroupKeyword(task) {
   const tf = (task && task.fields) || {};
   const names = [];
