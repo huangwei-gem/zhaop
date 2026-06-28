@@ -1,7 +1,10 @@
-node_modules/
-*.js
-!src/*.js
-!*.bat
-!*.json
+# ignore temp files
+fix*.js
+fix*.py
 *.txt
 test_*
+write_fix.js
+do_fix.js
+gen_*
+p*.*
+node_modules/
