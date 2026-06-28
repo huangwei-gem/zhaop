@@ -86,7 +86,7 @@ async function getUserToken() {
 	var now = Date.now();
 	if (userTokenCache && now < userTokenExp) return userTokenCache;
 	var f2=require("fs");
-	var tf=__dirname+"/../../user_token.json";
+	var tf=__dirname+"/../user_token.json";
 	var rt=null;
 	try{var td=JSON.parse(f2.readFileSync(tf,"utf8"));rt=td.refresh_token;}catch(e){}
 	if(!rt){console.log("[建群] 无refresh_token,请先授权");return null;}
@@ -273,6 +273,79 @@ async function check() {
   } catch (e) { console.error("[检查] 错误:", e.message); }
 }
 
+// ====== 消息处理 ======
+async function handleMessage(data) {
+	try {
+		const message = (data && data.message) || (data && data.event && data.event.message);
+		if (!message) return;
+		const contentStr = message.content;
+		if (!contentStr || message.message_type !== "text") return;
+		let content;
+		try { content = JSON.parse(contentStr); } catch (e) { content = { text: contentStr }; }
+		const text = content.text || "";
+		const cleanText = text.replace(/<at[^>]*>[^<]*<\/at>/g, "").trim();
+	
+	// === 建群命令 ===
+		if (cleanText === "建群") {
+			console.log("[消息] 触发手动建群");
+			const chatId = message.chat_id;
+			await feishu.sendMsg(chatId, "text", JSON.stringify({text: "正在检查招聘任务并建群..."}));
+			await autoCreateGroup();
+			await feishu.sendMsg(chatId, "text", JSON.stringify({text: "建群检查完成"}));
+			return;
+		}
+	
+	// === 一面评价 ===
+		const reviewMatch = cleanText.match(/([^\s@]+)\s*一面评价[\uFF1A:]?\s*(.*)/);
+		if (reviewMatch) {
+			const targetName = reviewMatch[1].trim();
+			const reviewContent = (reviewMatch[2] || "").trim();
+			const chatId = message.chat_id;
+			if (!chatId || !targetName) { console.log("[消息] 缺参数"); return; }
+			console.log("[消息] 候选人:" + targetName + " 内容:" + (reviewContent || "空"));
+			let recId = null;
+			let fullName = targetName;
+			try {
+				const r = await feishu.listRec(BASE_TOKEN, TALENT_TABLE, { viewId: TALENT_VIEW, pageSize: 500 });
+				if (r.code === 0 && r.data && r.data.items) {
+					for (const rec of r.data.items) {
+						const name = (rec.fields && rec.fields[F.name]) || "";
+						if (name === targetName || name.includes(targetName)) {
+							recId = rec.record_id;
+							fullName = name;
+							break;
+						}
+					}
+				}
+			} catch (e) { console.error("[消息] 查人才库失败:", e.message); }
+			if (!recId) {
+				console.log("[消息] 未找到:" + targetName);
+				await feishu.sendMsg(chatId, "text", JSON.stringify({text: "未找到【" + targetName + "】，请确认姓名正确"}));
+				return;
+			}
+			if (!reviewContent) {
+				await feishu.sendMsg(chatId, "text", JSON.stringify({text: "请发送完整格式：" + fullName + " 一面评价：你的评价内容"}));
+				return;
+			}
+			console.log("[消息] 写入一面建议: " + fullName + " -> " + reviewContent);
+			if (recId) {
+				const upRes = await feishu.updateRec(BASE_TOKEN, TALENT_TABLE, recId, { [F.interviewAdvice]: reviewContent });
+				console.log("[消息] 写入:", upRes.code === 0 ? "成功" : JSON.stringify(upRes));
+				if (upRes.code === 0) {
+					await feishu.sendMsg(chatId, "text", JSON.stringify({text: "✅ 已记录【" + fullName + "】的一面评价"}));
+				}
+			}
+			return;
+		}
+	
+	// === 面试情况统计 ===
+		if (cleanText.includes("面试情况")) {
+			console.log("[消息] 触发面试统计");
+			await sendInterviewStats();
+			return;
+		}
+	} catch (e) { console.error("[消息] 错误:", e.message); }
+}
 // ====== 卡片回调处理 ======
 async function handleCardAction(data) {
   const action = data && data.action;
