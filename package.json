@@ -1,0 +1,15 @@
+{
+  "name": "feishu-recruit-monitor",
+  "version": "1.0.0",
+  "description": "飞书招聘人才库监控机器人",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@larksuiteoapi/node-sdk": "^1.68.0"
+  }
+}
