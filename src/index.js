@@ -38,6 +38,7 @@ function optName(val) {
 }
 
 async function init() {
+  card.optName = optName;
   if (!APP_ID || !APP_SECRET) { console.error("[错误] 请设置 APP_ID 和 APP_SECRET"); process.exit(1); }
   await feishu.getToken();
   console.log("[启动] Token 获取成功");
@@ -803,11 +804,21 @@ async function sendLeaderSummary() {
       var tf = (task && task.fields) || {};
       var st = Array.isArray(tf["招聘状态"]) ? ((tf["招聘状态"][0] && tf["招聘状态"][0].name) ? tf["招聘状态"][0].name : String(tf["招聘状态"][0] || "")) : String(tf["招聘状态"] || "");
       if (st !== "招聘中") continue;
-      var ppl = Array.isArray(tf["负责人"]) ? tf["负责人"] : [];
+      var ppl = Array.isArray(tf["责任人"]) ? tf["责任人"] : [];
       for (var p of ppl) {
-        if (!p || !p.id) continue;
-        if (!pmap[p.id]) pmap[p.id] = { name: p.name || p.id, tasks: [] };
-        pmap[p.id].tasks.push(task);
+        if (!p) continue;
+        var pid = p.id;
+        var pname = p.name || p.text;
+        if (!pid && pname) {
+          for (var fn of ["业务一面", "HR二面", "终面"]) {
+            var fld = Array.isArray(tf[fn]) ? tf[fn] : [];
+            for (var x of fld) { if (x && x.name === pname && x.id) { pid = x.id; break; } }
+            if (pid) break;
+          }
+        }
+        if (!pid) { console.log("[负责人统计] 找不到 " + pname + " 的 open_id"); continue; }
+        if (!pmap[pid]) pmap[pid] = { name: pname, tasks: [] };
+        pmap[pid].tasks.push(task);
       }
     }
     console.log("[负责人统计] 负责人数: " + Object.keys(pmap).length);
@@ -838,23 +849,10 @@ async function sendLeaderSummary() {
         var t0 = c.tasks[0];
         if (!t0) continue;
         var t0f = t0.fields || {};
-        var td2 = String(t0f["二级部门"] || "");
-        var td3 = String(t0f["三级部门"] || "");
-        var tpos = String(t0f["招聘岗位"] || "");
-        var tloc = String(t0f["城市"] || "");
 
         var hp = 0, ing = 0;
         for (var rec of talent) {
           var f = rec.fields || {};
-          var d2 = optName(f[F.dept2]);
-          var d3 = optName(f[F.dept3]);
-          var pos = optName(f[F.pos]);
-          var loc = f[F.loc] || optName(f[F.belongCity]) || "";
-          var deptOk = (!td2 || (d2 && d2.includes(td2))) && (!td3 || (d3 && d3.includes(td3)));
-          var posOk = !tpos || (pos && pos.includes(tpos));
-          var locOk = !tloc || (loc && loc.includes(tloc));
-          if (!deptOk || !posOk || !locOk) continue;
-
           var aiv = f[F.aiResult];
           var aiv2 = aiv ? (Array.isArray(aiv) ? String(aiv[0] || "") : String(aiv)) : "";
           var bp = Array.isArray(f[F.bizResult]) ? String(f[F.bizResult][0] || "") : String(f[F.bizResult] || "");

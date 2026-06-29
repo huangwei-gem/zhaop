@@ -26,18 +26,16 @@ function build(rec, task) {
     if (names.length) add("**面试官：**" + names.join("、"));
   }
 
-  // 头部说明
-  add("以下为候选人的 **" + n + "** 岗位匹配依据以及风险点，AI 生成，仅供参考。");
-  hr();
-
-  // 面试岗位
-  const interviewPos = f[F2.interviewPos] || "";
+    // 面试岗位
+  const interviewPos = module.exports.optName ? module.exports.optName(f[F2.interviewPos]) : (f[F2.interviewPos] || "");
   const ipVal = Array.isArray(interviewPos) ? interviewPos.join(",") : interviewPos;
-  if (ipVal) add("**面试岗位：** " + ipVal);
 
   // 招聘岗位
-  const pos = Array.isArray(f[F2.pos]) ? f[F2.pos].join(",") : (f[F2.pos] || "");
-  if (pos) add("**招聘岗位：** " + pos);
+  const pos = module.exports.optName ? module.exports.optName(f[F2.pos]) : (Array.isArray(f[F2.pos]) ? f[F2.pos].join(",") : (f[F2.pos] || ""));
+
+  // 头部说明
+  add("以下为候选人的 **" + n + "** 岗位匹配依据以及风险点，AI 生成，仅供参考。\n\n**面试岗位：** " + (ipVal || "无") + " | **招聘岗位：** " + (pos || "无"));
+  hr();
 
   hr();
 
@@ -150,4 +148,4 @@ function interviewReviewDoneCard(name, rating, reason) {
     ]
   };
 }
-module.exports = { build, doneCard, interviewReviewCard, interviewAskReasonCard, interviewReviewDoneCard, F2 };
+module.exports = { build, doneCard, interviewReviewCard, interviewAskReasonCard, interviewReviewDoneCard, F2, optName: null };
