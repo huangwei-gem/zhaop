@@ -39,7 +39,10 @@ async function init() {
   } catch (e) { console.error("[启动] 加载已有记录失败:", e.message); }
     // 加载已有任务ID到processedTasks
   for (const t of taskCache) processedTasks.add(t.record_id);
-  console.log("[启动] 已加载 " + processedTasks.size + " 条任务到processedTasks");
+  // 测试阶段: 保留最后3行待建群, 其余标记为已处理
+  var last3Rows = taskCache.slice(-3);
+  for (const t of last3Rows) processedTasks.delete(t.record_id);
+  console.log("[启动] 保留最后 " + last3Rows.length + " 行待建群, 其余 " + processedTasks.size + " 条已标记");
   console.log("[启动] 初始化完成");
 }
 
@@ -109,49 +112,82 @@ async function getUserToken() {
 }
 
 async function autoCreateGroup() {
-	try{
-		var userToken=await getUserToken();
-		if(!userToken){console.log("[建群] 未授权,跳过建群");return;}
-		var r=await feishu.listRec(BASE_TOKEN,TASK_TABLE,{viewId:TASK_VIEW,pageSize:500,automaticFields:true});
-		if(r.code!==0||!r.data||!r.data.items)return;
-		for(var task of r.data.items){
-			if(processedTasks.has(task.record_id))continue;
-			processedTasks.add(task.record_id);
-			var tf=(task&&task.fields)||{};
-			var st=Array.isArray(tf["招聘状态"])?((tf["招聘状态"][0]&&tf["招聘状态"][0].name)?tf["招聘状态"][0].name:String(tf["招聘状态"][0]||"")):String(tf["招聘状态"]||"");
-			if(!st||!st.includes("招聘"))continue;
-			var biz1=Array.isArray(tf["业务一面"])?tf["业务一面"]:[];
-			var hr2=Array.isArray(tf["HR二面"])?tf["HR二面"]:[];
-			var fin=Array.isArray(tf["终面"])?tf["终面"]:[];
-			var names=[];var userOpenIds=[];
-			if(Array.isArray(biz1))biz1.forEach(function(x){if(x&&x.name)names.push(x.name);if(x&&x.id)userOpenIds.push(x.id);});
-			if(Array.isArray(hr2))hr2.forEach(function(x){if(x&&x.name)names.push(x.name);if(x&&x.id)userOpenIds.push(x.id);});
-			if(Array.isArray(fin))fin.forEach(function(x){if(x&&x.name)names.push(x.name);if(x&&x.id)userOpenIds.push(x.id);});
-			if(names.length===0)continue;
-			var groupName=names.join("、")+"招聘群";
-			var existing=await feishu.findGroup(groupName);
-			if(existing){console.log("[建群] "+groupName+" 已存在跳过");continue;}
-			console.log("[建群] 创建群: "+groupName);
-			if(userOpenIds.length===0){console.log("[建群] 无面试官ID");continue;}
-			var https=require("https");
-			var body=JSON.stringify({name:groupName,description:"招聘群",only_at:false,membership_approval:false,chat_type:"private",owner_id:"ou_2b11f9d276ced64c5aa10e8cea8fcb65",user_id_list:userOpenIds,bot_id_list:["cli_aab1ca3228f91cef"]});
-			console.log("[建群] 请求:",body);
-			var createRes=await new Promise(function(res,rej){
-				var opts={hostname:"open.feishu.cn",path:"/open-apis/im/v1/chats?set_bot_manager=true",method:"POST",headers:{Authorization:"Bearer "+userToken,"Content-Type":"application/json; charset=utf-8"}};
-				var req=https.request(opts,function(rp){var d="";rp.on("data",function(c){d+=c;});rp.on("end",function(){res(JSON.parse(d));});});
-				req.on("error",rej);req.write(body);req.end();
-			});
-			console.log("[建群] 响应:",JSON.stringify(createRes));
-			if(createRes.code===0&&createRes.data&&createRes.data.chat_id){
-				console.log("[建群] 成功: "+groupName+" chat_id:"+createRes.data.chat_id);
-				groupCache[groupName]=createRes.data.chat_id;
-			}else{
-				console.error("[建群] 失败:",createRes.msg);
-			}
-		}
-	}catch(e){console.error("[建群] 错误:",e.message);}
-}
+  try {
+    var userToken = await getUserToken();
+    if (!userToken) { console.log("[建群] 未授权,跳过建群"); return; }
+    var r = await feishu.listRec(BASE_TOKEN, TASK_TABLE, { viewId: TASK_VIEW, pageSize: 500, automaticFields: true });
+    if (r.code !== 0 || !r.data || !r.data.items) return;
+    var tasks = r.data.items;
+    console.log("[建群] 读取到 " + tasks.length + " 个任务, processedTasks=" + processedTasks.size);
 
+    // 过滤: 跳过已处理任务, 只处理招聘中的
+    var active = [];
+    for (var task of tasks) {
+      if (processedTasks.has(task.record_id)) continue;
+      processedTasks.add(task.record_id);
+      var tf = (task && task.fields) || {};
+      var st = Array.isArray(tf["招聘状态"])
+        ? ((tf["招聘状态"][0] && tf["招聘状态"][0].name) ? tf["招聘状态"][0].name : String(tf["招聘状态"][0] || ""))
+        : String(tf["招聘状态"] || "");
+      if (st === "招聘中") active.push(task);
+    }
+    console.log("[建群] 待处理新任务: " + active.length + " 个");
+
+    // 按面试官组合去重: 用所有面试官ID排序后拼接成唯一key
+    var combos = {};
+    for (var task of active) {
+      var tf = (task && task.fields) || {};
+      var biz1 = Array.isArray(tf["业务一面"]) ? tf["业务一面"] : [];
+      var hr2 = Array.isArray(tf["HR二面"]) ? tf["HR二面"] : [];
+      var fin = Array.isArray(tf["终面"]) ? tf["终面"] : [];
+      var ids = []; var ns = []; var oids = [];
+      function collect(arr) {
+        for (var i = 0; i < arr.length; i++) { var x = arr[i]; if (x && x.id) ids.push(x.id); if (x && x.name) ns.push(x.name); if (x && x.id) oids.push(x.id); }
+      }
+      collect(biz1); collect(hr2); collect(fin);
+      if (ids.length === 0) continue;
+      var key = ids.slice().sort().join(",");
+      if (!combos[key]) combos[key] = { names: [], openIds: [] };
+      for (var nm of ns) { if (combos[key].names.indexOf(nm) === -1) combos[key].names.push(nm); }
+      for (var oi of oids) { if (combos[key].openIds.indexOf(oi) === -1) combos[key].openIds.push(oi); }
+    }
+    console.log("[建群] 唯一面试官组合数: " + Object.keys(combos).length);
+    for (var k in combos) console.log("[建群]   组合: " + combos[k].names.join("、"));
+
+    // 为每个唯一组合建一个群
+    for (var k in combos) {
+      var c = combos[k];
+      var gn = c.names.join("、") + "招聘群";
+      var ex = await feishu.findGroup(gn);
+      if (ex) { console.log("[建群] " + gn + " 已存在跳过"); continue; }
+      console.log("[建群] 创建群: " + gn);
+      if (c.openIds.length === 0) { console.log("[建群] 无面试官ID"); continue; }
+      var https = require("https");
+      var body = JSON.stringify({
+        name: gn, description: "招聘群", only_at: false, membership_approval: false,
+        chat_type: "private", owner_id: "ou_2b11f9d276ced64c5aa10e8cea8fcb65",
+        user_id_list: c.openIds, bot_id_list: ["cli_aab1ca3228f91cef"]
+      });
+      console.log("[建群] 请求:", body);
+      var cr = await new Promise(function (res, rej) {
+        var opts = {
+          hostname: "open.feishu.cn", path: "/open-apis/im/v1/chats?set_bot_manager=true",
+          method: "POST", headers: { Authorization: "Bearer " + userToken, "Content-Type": "application/json; charset=utf-8" }
+        };
+        var req = https.request(opts, function (rp) { var d = ""; rp.on("data", function (c) { d += c; }); rp.on("end", function () { res(JSON.parse(d)); }); });
+        req.on("error", rej); req.write(body); req.end();
+      });
+      console.log("[建群] 响应:", JSON.stringify(cr));
+      if (cr.code === 0 && cr.data && cr.data.chat_id) {
+        console.log("[建群] 成功: " + gn + " chat_id:" + cr.data.chat_id);
+        groupCache[gn] = cr.data.chat_id;
+      } else {
+        console.error("[建群] 失败:", cr.msg);
+      }
+    }
+    console.log("[建群] 全部处理完成");
+  } catch (e) { console.error("[建群] 错误:", e.message); }
+}
 // ====== 群搜索 ======// ====== 群搜索 ======
 function getGroupKeyword(task) {
   const tf = (task && task.fields) || {};
