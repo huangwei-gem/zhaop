@@ -57,6 +57,11 @@ async function sendMsg(cid, type, content) {
   return await auth("POST", BASE_PATH + "/im/v1/messages?receive_id_type=chat_id", { receive_id: cid, msg_type: type, content: c });
 }
 
+async function sendPersonalMsg(openId, type, content) {
+  const c = typeof content === "string" ? content : JSON.stringify(content);
+  return await auth("POST", BASE_PATH + "/im/v1/messages?receive_id_type=open_id", { receive_id: openId, msg_type: type, content: c });
+}
+
 async function findGroup(kw) {
   // 先搜索
   let r = await auth("GET", BASE_PATH + "/im/v1/chats/search?query=" + encodeURIComponent(kw));
@@ -90,4 +95,4 @@ async function getUsers(openIds) {
   return [];
 }
 
-module.exports = { getToken, listAll, listRec, updateRec, sendMsg, findGroup, updateMsgCard, getUsers };
+module.exports = { getToken, listAll, listRec, updateRec, sendMsg, sendPersonalMsg, findGroup, updateMsgCard, getUsers };

@@ -772,6 +772,103 @@ async function sendInterviewStats() {
     console.log("[面试监控] 统计完成");
   } catch (e) { console.error("[面试监控] 错误:", e.message); }
 }
+
+// ====== 负责人招聘进度汇总 ======
+async function sendLeaderSummary() {
+  const now = new Date();
+  const h = now.getHours(), m = now.getMinutes();
+  if (h !== 10 || m !== 0) return;
+  console.log("[负责人统计] 10:00 开始汇总...");
+  try {
+    const tr = await feishu.listRec(BASE_TOKEN, TASK_TABLE, { viewId: TASK_VIEW, pageSize: 500, automaticFields: true });
+    if (tr.code !== 0 || !tr.data || !tr.data.items) return;
+    const talent = await feishu.listAll(BASE_TOKEN, TALENT_TABLE, { viewId: TALENT_VIEW });
+    if (!talent || !talent.length) { console.log("[负责人统计] 人才库为空"); return; }
+
+    // 按负责人分组
+    var pmap = {};
+    for (var task of tr.data.items) {
+      var tf = (task && task.fields) || {};
+      var st = Array.isArray(tf["招聘状态"]) ? ((tf["招聘状态"][0] && tf["招聘状态"][0].name) ? tf["招聘状态"][0].name : String(tf["招聘状态"][0] || "")) : String(tf["招聘状态"] || "");
+      if (st !== "招聘中") continue;
+      var ppl = Array.isArray(tf["负责人"]) ? tf["负责人"] : [];
+      for (var p of ppl) {
+        if (!p || !p.id) continue;
+        if (!pmap[p.id]) pmap[p.id] = { name: p.name || p.id, tasks: [] };
+        pmap[p.id].tasks.push(task);
+      }
+    }
+    console.log("[负责人统计] 负责人数: " + Object.keys(pmap).length);
+
+    for (var pid in pmap) {
+      var pers = pmap[pid];
+      var lines = ["【负责人招聘进度汇总】", "负责人: " + pers.name, ""];
+
+      // 按面试官组合分组
+      var combos = {};
+      for (var task of pers.tasks) {
+        var tf = (task && task.fields) || {};
+        var b1 = Array.isArray(tf["业务一面"]) ? tf["业务一面"] : [];
+        var h2 = Array.isArray(tf["HR二面"]) ? tf["HR二面"] : [];
+        var fn = Array.isArray(tf["终面"]) ? tf["终面"] : [];
+        var ids = []; var ns = [];
+        function collect(arr) { for (var x of arr) { if (x && x.id) ids.push(x.id); if (x && x.name) ns.push(x.name); } }
+        collect(b1); collect(h2); collect(fn);
+        if (ids.length === 0) continue;
+        var key = ids.slice().sort().join(",");
+        if (!combos[key]) combos[key] = { names: ns, target: 0, tasks: [] };
+        combos[key].target += Number(tf["招聘人数"]) || 1;
+        combos[key].tasks.push(task);
+      }
+
+      for (var k in combos) {
+        var c = combos[k];
+        var t0 = c.tasks[0];
+        if (!t0) continue;
+        var t0f = t0.fields || {};
+        var td2 = String(t0f["二级部门"] || "");
+        var td3 = String(t0f["三级部门"] || "");
+        var tpos = String(t0f["招聘岗位"] || "");
+        var tloc = String(t0f["城市"] || "");
+
+        var hp = 0, ing = 0;
+        for (var rec of talent) {
+          var f = rec.fields || {};
+          var d2 = optName(f[F.dept2]);
+          var d3 = optName(f[F.dept3]);
+          var pos = optName(f[F.pos]);
+          var loc = f[F.loc] || optName(f[F.belongCity]) || "";
+          var deptOk = (!td2 || (d2 && d2.includes(td2))) && (!td3 || (d3 && d3.includes(td3)));
+          var posOk = !tpos || (pos && pos.includes(tpos));
+          var locOk = !tloc || (loc && loc.includes(tloc));
+          if (!deptOk || !posOk || !locOk) continue;
+
+          var hr = Array.isArray(f[F.hrResult]) ? String(f[F.hrResult][0] || "") : String(f[F.hrResult] || "");
+          var bp = Array.isArray(f[F.bizResult]) ? String(f[F.bizResult][0] || "") : String(f[F.bizResult] || "");
+          var adv = String(f[F.interviewAdvice] || "").trim();
+          if (hr === "通过" || hr === "opt3RiKdl0") hp++;
+          if ((hr === "通过" || hr === "opt3RiKdl0") && (bp === "通过" || bp === "optAPC5yjs") && !adv) ing++;
+        }
+
+        var gn = c.names.join("、") || "未命名";
+        lines.push("---");
+        lines.push("群: " + gn);
+        lines.push("目标招聘人数: " + c.target);
+        lines.push("已推送简历: " + hp);
+        lines.push("HR未面试: " + ing);
+      }
+
+      if (lines.length <= 2) continue;
+      var msg = lines.join("\n");
+      console.log("[负责人统计] 发给 " + pers.name);
+      var res = await feishu.sendPersonalMsg(pid, "text", JSON.stringify({text: msg}));
+      if (res.code === 0) console.log("[负责人统计] 成功");
+      else console.error("[负责人统计] 失败:", res.code, res.msg);
+    }
+    console.log("[负责人统计] 全部完成");
+  } catch (e) { console.error("[负责人统计] 错误:", e.message); }
+}
+
 async function main() {
   await init();
   const ed = new lark.EventDispatcher({}).register({
@@ -798,6 +895,7 @@ async function main() {
   setInterval(() => autoCreateGroup(), 600000);
   setInterval(() => sendReminders(), 60000);
   setInterval(() => sendInterviewStats(), 60000);
+  setInterval(() => sendLeaderSummary(), 60000);
   console.log("[启动] 监控每 " + INTERVAL + " 秒");
   console.log("[启动] 提醒: 每天10:00和15:00");
   console.log("[启动] 面试监控: 每天10:00");
