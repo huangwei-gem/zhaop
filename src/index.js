@@ -1,3 +1,16 @@
+// Load .env config
+const fs = require('fs');
+const envPath = __dirname + '/../.env';
+if (fs.existsSync(envPath)) {
+  const envContent = fs.readFileSync(envPath, 'utf-8');
+  for (const line of envContent.split('\n')) {
+    const t = line.trim();
+    if (!t || t.startsWith('#')) continue;
+    const i = t.indexOf('=');
+    if (i > 0) { const k = t.substring(0,i).trim(); const v = t.substring(i+1).trim(); if (!process.env[k]) process.env[k] = v; }
+  }
+}
+
 // 飞书招聘人才库监控机器人 v7.0
 const lark = require("@larksuiteoapi/node-sdk");
 const feishu = require("./feishu-api");

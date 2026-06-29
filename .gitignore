@@ -8,3 +8,4 @@ do_*.js
 write_*.js
 gen_*
 p1.txt
+.env
