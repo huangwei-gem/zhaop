@@ -42,16 +42,7 @@ function build(rec, task) {
   add("**风险点**\n" + (f[F2.aiRisk] || "暂无"));
   add("**面试问题建议**\n" + (f[F2.aiTips] || "暂无"));
   hr();
-  add("**复核流程：** HR复核 -> 业务复核");
-  hr();
-  add("**HR复核**");
-  e.push({ tag:"action", actions:[
-    { tag:"button", text:{ tag:"plain_text", content:"通过" }, type:"primary",
-      value:{ action:"hr_review", result:"pass", record_id:rid, name:n } },
-    { tag:"button", text:{ tag:"plain_text", content:"淘汰" }, type:"danger",
-      value:{ action:"hr_review", result:"reject", record_id:rid, name:n } }
-  ]});
-  hr();
+
   add("**业务复核**");
   e.push({ tag:"action", actions:[
     { tag:"button", text:{ tag:"plain_text", content:"通过" }, type:"primary",
@@ -66,8 +57,8 @@ function build(rec, task) {
 }
 
 // 完成卡片（无按钮）
-function doneCard(name, type, result, reviewer) {
-  const typeName = type === "hr_review" ? "HR复核" : "业务复核";
+function doneCard(name, result, reviewer) {
+  const typeName = "业务复核";
   const resultText = result === "pass" ? "已通过" : "已淘汰";
   const tmpl = result === "pass" ? "green" : "red";
   return { config:{ wide_screen_mode:true, update_multi:true },

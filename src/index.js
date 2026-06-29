@@ -405,7 +405,6 @@ async function handleCardAction(data) {
   // === HR/业务复核 ===
   console.log("[回调] " + act + " -> " + result + " 记录:" + record_id);
   const fields = {};
-  if (act === "hr_review") fields[F.hrResult] = (result === "pass") ? "通过" : "淘汰";
   if (act === "biz_review") fields[F.bizResult] = (result === "pass") ? "通过" : "淘汰";
   console.log("[回调] 写入:", JSON.stringify(fields));
   const updateRes = await feishu.updateRec(BASE_TOKEN, TALENT_TABLE, record_id, fields);
@@ -414,7 +413,7 @@ async function handleCardAction(data) {
   const sent = sentCards.get(record_id);
   if (sent && sent.msgId) {
     const token = await feishu.getToken();
-    const doneBody = card.doneCard(vname || "未知", act, result, operatorName);
+    const doneBody = card.doneCard(vname || "未知", result, operatorName);
     console.log("[回调] 更新卡片 msg:" + sent.msgId);
     const cardRes = await feishu.updateMsgCard(token, sent.msgId, doneBody);
     console.log("[回调] 卡片:", cardRes.code === 0 ? "成功" : JSON.stringify(cardRes));
