@@ -526,7 +526,7 @@ async function handleMessage(data) {
                         const vadv=String(vf2[vF.interviewAdvice]||'').trim();
                         if (vhp && vbp && !vadv) ving++; if (vhp && vbp && vadv) vfin++;
                       }
-                      const vmsg='【面试情况统计】 面试官: '+vb1n+'、'+vh2n+' 目标招聘人数: '+vcnt+' HR推送数: '+vhp+' 面试中人数: '+ving+' 面试结束人数: '+vfin;
+                      const vmsg='【面试情况统计】 面试官: '+vb1n+'、'+vh2n+' 目标招聘人数: '+vcnt+' 已推送简历: '+vhp+' 面试中人数: '+ving+' 面试结束人数: '+vfin;
                       await vf.sendMsg(chatId,'text',JSON.stringify({text:vmsg}));
                       console.log('[面试情况] 已发送到 '+chatId);
                     }
@@ -559,7 +559,7 @@ async function handleMessage(data) {
                       const vadv=String(vf2[vF.interviewAdvice]||'').trim();
                       if (vhp && vbp && !vadv) ving++; if (vhp && vbp && vadv) vfin++;
                     }
-                    const vmsg='【面试情况统计】 面试官: '+vb1n+'、'+vh2n+' 目标招聘人数: '+vcnt+' HR推送数: '+vhp+' 面试中人数: '+ving+' 面试结束人数: '+vfin;
+                    const vmsg='【面试情况统计】 面试官: '+vb1n+'、'+vh2n+' 目标招聘人数: '+vcnt+' 已推送简历: '+vhp+' 面试中人数: '+ving+' 面试结束人数: '+vfin;
                     await vf.sendMsg(vchat.chat_id,'text',JSON.stringify({text:vmsg}));
                     console.log('[面试情况] 发送到 '+vchat.name);
                   }
@@ -702,16 +702,16 @@ async function sendInterviewStats() {
       g.records = groupRecords;
 
       // 统计数据
-      let hrPassCount = 0; // HR复核=通过
-      let interviewingCount = 0; // HR+业务都通过，无一面建议
-      let finishedCount = 0; // HR+业务都通过，有建议
+      let pushedCount = 0; // 已推送简历
+      let interviewingCount = 0; // 业务通过，无一面评价
+      let finishedCount = 0; // 业务通过，已有一面评价
 
       for (const rec of groupRecords) {
         const f = rec.fields || {};
         // HR复核结果: opt3RiKdl0=通过, optI9zbTjc=淘汰
-        const hrRaw = f[F.hrResult];
-        const hrVal = Array.isArray(hrRaw) ? String(hrRaw[0] || "") : String(hrRaw || "");
-        const hrPass = hrVal === "通过" || hrVal === "opt3RiKdl0";
+        const aiRaw = f[F.aiResult];
+        const aiVal = aiRaw ? (Array.isArray(aiRaw) ? String(aiRaw[0] || "") : String(aiRaw)) : "";
+        const pushed = aiVal.length > 0;
 
         // 业务复核结果: optAPC5yjs=通过, optJYdXCeR=淘汰
         const bizRaw = f[F.bizResult];
@@ -722,18 +722,18 @@ async function sendInterviewStats() {
         const advice = f[F.interviewAdvice] || "";
         const hasAdvice = String(advice).trim().length > 0;
 
-        if (hrPass) hrPassCount++;
-        if (hrPass && bizPass && !hasAdvice) interviewingCount++;
-        if (hrPass && bizPass && hasAdvice) finishedCount++;
+        if (pushed) pushedCount++;
+        if (bizPass && !hasAdvice) interviewingCount++;
+        if (bizPass && hasAdvice) finishedCount++;
       }
 
-      g.hrPassCount = hrPassCount;
+      g.pushedCount = pushedCount;
       g.interviewingCount = interviewingCount;
       g.finishedCount = finishedCount;
 
       console.log("[面试监控] " + g.biz1Name + "+" + g.hr2Name +
         " 目标:" + g.targetCount +
-        " HR推送:" + hrPassCount +
+        " 已推送:" + pushedCount +
         " 面试中:" + interviewingCount +
         " 已结束:" + finishedCount +
         " 匹配记录:" + groupRecords.length);
@@ -758,7 +758,7 @@ async function sendInterviewStats() {
         "【面试情况统计】" +
         "\\n面试官: " + groupName +
         "\\n目标招聘人数: " + g.targetCount +
-        "\\nHR推送数: " + g.hrPassCount +
+        "\\n已推送简历: " + g.pushedCount +
         "\\n面试中人数: " + g.interviewingCount +
         "\\n面试结束人数: " + g.finishedCount;
 
@@ -842,11 +842,12 @@ async function sendLeaderSummary() {
           var locOk = !tloc || (loc && loc.includes(tloc));
           if (!deptOk || !posOk || !locOk) continue;
 
-          var hr = Array.isArray(f[F.hrResult]) ? String(f[F.hrResult][0] || "") : String(f[F.hrResult] || "");
+          var aiv = f[F.aiResult];
+          var aiv2 = aiv ? (Array.isArray(aiv) ? String(aiv[0] || "") : String(aiv)) : "";
           var bp = Array.isArray(f[F.bizResult]) ? String(f[F.bizResult][0] || "") : String(f[F.bizResult] || "");
           var adv = String(f[F.interviewAdvice] || "").trim();
-          if (hr === "通过" || hr === "opt3RiKdl0") hp++;
-          if ((hr === "通过" || hr === "opt3RiKdl0") && (bp === "通过" || bp === "optAPC5yjs") && !adv) ing++;
+          if (aiv2.length > 0) hp++;
+          if ((bp === "通过" || bp === "optAPC5yjs") && !adv) ing++;
         }
 
         var gn = c.names.join("、") || "未命名";
