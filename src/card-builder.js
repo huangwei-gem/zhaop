@@ -1,6 +1,6 @@
 // 飞书简历评审交互卡片 v2.1
 const F2 = {
-  name:"姓名", dept2:"二级部门", dept3:"三级部门", pos:"招聘岗位", loc:"城市",
+  name:"姓名", dept2:"二级部门", dept3:"三级部门", pos:"招聘岗位", interviewPos:"面试岗位", loc:"城市",
   aiResult:"AI简历初筛结果", aiEval:"AI简历评估", aiMatch:"岗位能力维度匹配",
   aiStrength:"优势分析", aiRisk:"风险点", aiTips:"面试问题建议",
   hrResult:"HR复核结果", bizResult:"业务复核结果（🟢业务简历筛选结果选择点这里，其他部分都不要填写，这里简历初筛通过的人员将进入面试）", interviewAdvice:"一面建议"
@@ -10,11 +10,6 @@ function build(rec, task) {
   const f = rec.fields || {};
   const n = f[F2.name] || "未知";
   const rid = rec.record_id;
-  const d2 = Array.isArray(f[F2.dept2]) ? f[F2.dept2].join(",") : (f[F2.dept2] || "");
-  const d3 = Array.isArray(f[F2.dept3]) ? f[F2.dept3].join(",") : (f[F2.dept3] || "");
-  const dept = d2 + " / " + d3;
-  const pos = Array.isArray(f[F2.pos]) ? f[F2.pos].join(",") : (f[F2.pos] || "");
-  const loc = f[F2.loc] || "";
   const e = [];
   const add = (t) => e.push({ tag:"div", text:{ tag:"lark_md", content:t } });
   const hr = () => e.push({ tag:"hr" });
@@ -30,19 +25,31 @@ function build(rec, task) {
     if (Array.isArray(fin)) fin.forEach(x => { if(x && x.name) names.push(x.name); });
     if (names.length) add("**面试官：**" + names.join("、"));
   }
-  add("**姓名：**" + n + "   **部门：**" + dept);
-  add("**岗位：**" + pos + "   **城市：**" + loc);
-  hr();
-  const aiVal = f[F2.aiResult];
-  add("**AI初筛结果**\n" + (Array.isArray(aiVal) ? aiVal.join(",") : (aiVal || "暂无")));
-  hr();
-  add("**AI简历评估**\n" + (f[F2.aiEval] || "暂无"));
-  add("**岗位能力维度匹配**\n" + (f[F2.aiMatch] || "暂无"));
-  add("**优势分析**\n" + (f[F2.aiStrength] || "暂无"));
-  add("**风险点**\n" + (f[F2.aiRisk] || "暂无"));
-  add("**面试问题建议**\n" + (f[F2.aiTips] || "暂无"));
+
+  // 头部说明
+  add("以下为候选人的 **" + n + "** 岗位匹配依据以及风险点，AI 生成，仅供参考。");
   hr();
 
+  // 面试岗位
+  const interviewPos = f[F2.interviewPos] || "";
+  const ipVal = Array.isArray(interviewPos) ? interviewPos.join(",") : interviewPos;
+  if (ipVal) add("**面试岗位：** " + ipVal);
+
+  // 招聘岗位
+  const pos = Array.isArray(f[F2.pos]) ? f[F2.pos].join(",") : (f[F2.pos] || "");
+  if (pos) add("**招聘岗位：** " + pos);
+
+  hr();
+
+  // ✅岗位匹配依据
+  add("**✅岗位匹配依据**\n" + (f[F2.aiMatch] || "暂无"));
+
+  // ⚠️风险点
+  add("**⚠️风险点**\n" + (f[F2.aiRisk] || "暂无"));
+
+  hr();
+
+  // 业务复核
   add("**业务复核**");
   e.push({ tag:"action", actions:[
     { tag:"button", text:{ tag:"plain_text", content:"通过" }, type:"primary",
@@ -53,10 +60,8 @@ function build(rec, task) {
   e.push({ tag:"note", elements:[{ tag:"plain_text",
     content:new Date().toLocaleString("zh-CN",{timeZone:"Asia/Shanghai"}) + " | ID:" + rid }] });
   return { config:{ wide_screen_mode:true, update_multi:true },
-    header:{ template:"indigo", title:{ tag:"plain_text", content:n + " - 简历评审" } }, elements:e };
+    header:{ template:"indigo", title:{ tag:"plain_text", content:n + " - 岗位匹配评估" } }, elements:e };
 }
-
-// 完成卡片（无按钮）
 function doneCard(name, result, reviewer) {
   const typeName = "业务复核";
   const resultText = result === "pass" ? "已通过" : "已淘汰";
