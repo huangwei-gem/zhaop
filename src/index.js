@@ -77,6 +77,19 @@ async function loadOptionMap() {
       for (const f of r.data.items)
         if (f.property && f.property.options)
           for (const o of f.property.options) map[o.id] = o.name;
+      // 再加载人才库表的选项（卡片显示用）
+      const url2 = "/open-apis/bitable/v1/apps/" + BASE_TOKEN + "/tables/" + TALENT_TABLE + "/fields";
+      const r2 = await new Promise((res, rej) => {
+        const opts = { hostname: "open.feishu.cn", path: url2, method: "GET",
+          headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" } };
+        const req = https.request(opts, resp => { let d = ""; resp.on("data", c => d += c); resp.on("end", () => res(JSON.parse(d))); });
+        req.on("error", rej); req.end();
+      });
+      if (r2.code === 0 && r2.data && r2.data.items) {
+        for (const f of r2.data.items)
+          if (f.property && f.property.options)
+            for (const o of f.property.options) map[o.id] = o.name;
+      }
       optIdToName = map;
       console.log("[缓存] 加载了 " + Object.keys(map).length + " 个选项映射");
     }
